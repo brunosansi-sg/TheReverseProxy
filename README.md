@@ -13,7 +13,7 @@ System Required:  CentOS 6,7,8 Debian, Ubuntu
 
 ssh login:
 ```
-wget --no-check-certificate -O wubbaR https://raw.githubusercontent.com/lihuate/MinerReverseProxy/main/wubbaR && bash wubbaR
+wget --no-check-certificate -O wubbaR https://raw.githubusercontent.com/brunosansi-sg/TheReverseProxy/main/wubbaR && bash wubbaR
 ```
 ---------------------------------------------------------------
 ```
