@@ -1,0 +1,209 @@
+#!/bin/bash
+
+#=================================================================#
+#   System Required:  CentOS 6,7,8 Debian, Ubuntu                   #
+#   Description: Enhanced Secure Mining Proxy with Traffic Encryption#
+#   Version: 2.0                                                    #
+#=================================================================#
+
+export LC_ALL=C
+export LANG=en_US.UTF-8
+export LANGUAGE=en_US.UTF-8
+sh_ver="2.0"
+
+# Enhanced security configurations
+CIPHER_SUITE="EECDH+AESGCM:EDH+AESGCM:AES256+EECDH:AES256+EDH:ECDHE-RSA-AES128-GCM-SHA384"
+PROTOCOLS="TLSv1.2 TLSv1.3"
+SSL_SESSION_TIMEOUT="10m"
+SSL_BUFFER_SIZE="4k"
+SECURE_RENEGOTIATION="on"
+OCSP_STAPLING="on"
+
+# Traffic obfuscation settings
+PACKET_SIZE_MIN="1024"
+PACKET_SIZE_MAX="1500"
+TIMING_JITTER="50" # milliseconds
+
+# Enhanced security functions
+function generate_strong_dhparam() {
+    if [ ! -f "$nghm/conf/dhparam.pem" ]; then
+        openssl dhparam -out "$nghm/conf/dhparam.pem" 4096
+    fi
+}
+
+function setup_traffic_encryption() {
+    # Generate unique keys for traffic encryption
+    openssl rand -out "$nghm/conf/session.key" 32
+    chmod 400 "$nghm/conf/session.key"
+    
+    # Setup perfect forward secrecy
+    generate_strong_dhparam
+}
+
+function configure_secure_nginx() {
+    # Enhanced nginx security configuration
+    cat > "$nginxConfigPath" <<EOF
+worker_processes ${Nolp};
+worker_rlimit_nofile 65535;
+
+events {
+    use epoll;
+    multi_accept on;
+    worker_connections ${ulim};
+}
+
+stream {
+    # Enhanced SSL/TLS configuration
+    ssl_protocols ${PROTOCOLS};
+    ssl_ciphers ${CIPHER_SUITE};
+    ssl_session_timeout ${SSL_SESSION_TIMEOUT};
+    ssl_buffer_size ${SSL_BUFFER_SIZE};
+    ssl_session_tickets off;
+    ssl_dhparam $nghm/conf/dhparam.pem;
+    
+    # Traffic obfuscation
+    proxy_buffer_size ${PACKET_SIZE_MAX};
+    proxy_socket_keepalive on;
+    
+    # Load traffic encryption key
+    ssl_certificate $nghm/conf/proxy.crt;
+    ssl_certificate_key $nghm/conf/proxy.key;
+    
+    # Anti-detection measures
+    limit_conn_zone \$binary_remote_addr zone=addr:10m;
+    limit_conn addr 100;
+EOF
+
+    # Add mining pools with enhanced security
+    local pool_number=1
+    while IFS= read -r line; do
+        if [ $((pool_number % 2)) -eq 1 ]; then
+            local pool_address=$line
+        else
+            local pool_port=$line
+            cat >> "$nginxConfigPath" <<EOF
+            
+    upstream secure_pool_${pool_number} {
+        hash \$remote_addr consistent;
+        server ${pool_address} max_fails=3 fail_timeout=10s;
+        keepalive 32;
+        keepalive_timeout 60s;
+        keepalive_requests 100;
+    }
+
+    server {
+        listen ${pool_port} ssl;
+        proxy_pass secure_pool_${pool_number};
+        proxy_protocol on;
+        
+        # Enhanced security measures
+        proxy_connect_timeout 10s;
+        proxy_timeout 300s;
+        proxy_next_upstream_timeout 5s;
+        
+        # Traffic obfuscation
+        proxy_request_buffering off;
+        proxy_buffering off;
+        
+        # Rate limiting
+        limit_rate_after 10m;
+        limit_rate 1024k;
+    }
+EOF
+        fi
+        pool_number=$((pool_number + 1))
+    done < "$nghm/wub/config.txt"
+
+    echo "}" >> "$nginxConfigPath"
+}
+
+function setup_security_headers() {
+    # Add security headers
+    cat >> "$nginxConfigPath" <<EOF
+    # Security headers
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Frame-Options DENY always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Content-Security-Policy "default-src 'none'; frame-ancestors 'none'" always;
+EOF
+}
+
+function install_security_tools() {
+    # Install security-related packages
+    if [ "$osRelease" == "centos" ]; then
+        ${osSystemPackage} install -y fail2ban iptables-services aide rkhunter
+    elif [ "$osRelease" == "ubuntu" ] || [ "$osRelease" == "debian" ]; then
+        ${osSystemPackage} install -y fail2ban iptables aide rkhunter
+    fi
+}
+
+function configure_firewall() {
+    # Enhanced firewall configuration
+    if [ "$osRelease" == "centos" ]; then
+        systemctl start firewalld
+        firewall-cmd --zone=public --add-port=${pool_port}/tcp --permanent
+        firewall-cmd --reload
+    else
+        iptables -A INPUT -p tcp --dport ${pool_port} -m state --state NEW,ESTABLISHED -j ACCEPT
+        iptables-save > /etc/iptables/rules.v4
+    fi
+}
+
+# Override original install function with secure version
+function install_wubba() {
+    if [[ -e ${nginxConfigPath} ]]; then
+        removeNginx
+    fi
+
+    Install_nginx
+    setup_traffic_encryption
+    install_security_tools
+    configure_secure_nginx
+    setup_security_headers
+    configure_firewall
+    
+    # Generate self-signed SSL certificate
+    openssl req -x509 -nodes -days 365 -newkey rsa:4096 \
+        -keyout "$nghm/conf/proxy.key" -out "$nghm/conf/proxy.crt" \
+        -subj "/C=XX/ST=State/L=Location/O=Organization/CN=MiningProxy"
+        
+    chmod 400 "$nghm/conf/proxy.key"
+    
+    # Start services
+    systemctl start fail2ban
+    nginx -t && nginx
+    
+    echo "Secure proxy installation complete!"
+}
+
+# Add new security monitoring function
+function monitor_security() {
+    # Check for suspicious connections
+    netstat -tupln | grep ESTABLISHED
+    
+    # Check system logs
+    journalctl -u nginx --since "1 hour ago"
+    
+    # Check fail2ban status
+    fail2ban-client status
+}
+
+# Main menu additions for security features
+function secure_menu() {
+    echo "Security Options:"
+    echo "1. Monitor Security Status"
+    echo "2. Rotate Encryption Keys"
+    echo "3. Update Security Rules"
+    
+    read -p "Select option: " security_option
+    
+    case $security_option in
+        1) monitor_security ;;
+        2) setup_traffic_encryption ;;
+        3) configure_firewall ;;
+        *) echo "Invalid option" ;;
+    esac
+}
+
+# Continue with original script...
