@@ -536,7 +536,7 @@ EOF
 
 # 更新本脚本
 function upgradeScript(){
-    wget -Nq --no-check-certificate -O ./wubbaR "https://raw.githubusercontent.com/lihuate/MinerReverseProxy/main/wubbaR"
+    wget -Nq --no-check-certificate -O ./wubbaR "https://raw.githubusercontent.com/brunosansi-sg/TheReverseProxy/main/wubbaR"
     green " [本脚本升级成功! ]"
     chmod +x ./wubbaR
     sleep 2s
