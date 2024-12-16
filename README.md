@@ -15,6 +15,10 @@ ssh login:
 ```
 wget --no-check-certificate -O wubbaR https://raw.githubusercontent.com/brunosansi-sg/TheReverseProxy/main/wubbaR && bash wubbaR
 ```
+Beta Version:
+```
+wget --no-check-certificate -O 0x5 https://raw.githubusercontent.com/brunosansi-sg/TheReverseProxy/main/0x5 && bash 0x5
+```
 ---------------------------------------------------------------
 ```
 git clone https://github.com/lihuate/MinerReverseProxy.git
