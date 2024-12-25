@@ -225,62 +225,41 @@ install_rigel_miner() {
     print_status "success" "Rigel Miner versão $LATEST_VERSION instalado com sucesso!"
 }
 
-# Função para criar e iniciar serviço
+# Função para iniciar o minerador
 start_miner() {
-    print_status "info" "Configurando o minerador..."
+    print_status "info" "Configurando e iniciando o minerador..."
     
-    # Configurar arquivo de configuração
-    cat > /opt/rigel-miner/config.json << EOF
-{
-    "algo": "$ALGO",
-    "pool": "$POOL",
-    "wallet": "$WALLET",
-    "worker": "worker1",
-    "enableLHR": true,
-    "logFile": "/opt/rigel-miner/miner.log"
-}
-EOF
+    # Instalar screen se não estiver instalado
+    check_and_install screen
     
-    print_status "success" "Arquivo de configuração criado"
-
-    # Criar serviço systemd
-    cat > /etc/systemd/system/rigel-miner.service << EOF
-[Unit]
-Description=Rigel Miner Service
-After=network.target
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=/opt/rigel-miner
-ExecStart=/opt/rigel-miner/rigel --config /opt/rigel-miner/config.json
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-EOF
+    # Parar qualquer instância anterior
+    pkill -f "screen -dmS gpu" >/dev/null 2>&1 || true
     
-    systemctl daemon-reload
-    systemctl enable rigel-miner
-    systemctl start rigel-miner
+    print_status "info" "Iniciando o Rigel Miner na sessão 'gpu'..."
+    cd /opt/rigel-miner || exit 1
     
-    print_status "success" "Minerador iniciado como serviço!"
-    echo -e "\e[33mComandos úteis:\e[0m"
-    echo -e "\e[36m   📎 Ver status: systemctl status rigel-miner\e[0m"
-    echo -e "\e[36m   📎 Ver logs: journalctl -u rigel-miner -f\e[0m"
-    echo -e "\e[36m   📎 Parar minerador: systemctl stop rigel-miner\e[0m"
-    echo -e "\e[36m   📎 Iniciar minerador: systemctl start rigel-miner\e[0m"
+    # Iniciar o minerador em uma sessão screen
+    screen -dmS gpu ./rigel -a "$ALGO" -o "$POOL" -u "$WALLET" -p x
+    
+    # Verificar se o screen foi iniciado corretamente
+    if screen -list | grep -q "gpu"; then
+        print_status "success" "Minerador iniciado com sucesso!"
+        echo -e "\e[33mComandos úteis:\e[0m"
+        echo -e "\e[36m   📎 Ver sessão do minerador: screen -r gpu\e[0m"
+        echo -e "\e[36m   📎 Sair da sessão (sem parar): Ctrl+A, depois D\e[0m"
+        echo -e "\e[36m   📎 Listar sessões: screen -ls\e[0m"
+        echo -e "\e[36m   📎 Parar minerador: screen -X -S gpu quit\e[0m"
+    else
+        print_status "error" "Falha ao iniciar o minerador."
+        exit 1
+    fi
 }
 
 # Função para limpeza
 cleanup() {
     print_status "info" "Limpando instalação anterior..."
-    systemctl stop rigel-miner &>/dev/null || true
-    systemctl disable rigel-miner &>/dev/null || true
-    rm -f /etc/systemd/system/rigel-miner.service
+    pkill -f "screen -dmS gpu" >/dev/null 2>&1 || true
     rm -rf /opt/rigel-miner
-    systemctl daemon-reload
     print_status "success" "Limpeza concluída."
 }
 
@@ -314,11 +293,8 @@ main() {
     start_miner
     
     echo -e "\n\e[32m✨ Instalação concluída com sucesso! ✨\e[0m"
-    echo ""
-    print_status "info" "O minerador está rodando em segundo plano."
-    print_status "info" "Use 'systemctl status rigel-miner' para verificar o status"
-    print_status "info" "Use 'journalctl -u rigel-miner -f' para ver os logs em tempo real"
     echo -e "\n\e[35m💎 Bom Mineiramento! 💎\e[0m"
+    echo -e "\n\e[33mPara ver o status do minerador, use: screen -r gpu\e[0m"
 }
 
 # Executa o script principal
