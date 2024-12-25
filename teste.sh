@@ -1,0 +1,325 @@
+#!/bin/bash
+
+# Função para exibir texto colorido
+print_status() {
+    case $1 in
+        "info") echo -e "\e[33m[INFO] $2\e[0m" ;;
+        "success") echo -e "\e[32m[INFO] ✅ $2\e[0m" ;;
+        "error") echo -e "\e[31m[ERRO] ❌ $2\e[0m" ;;
+        "warning") echo -e "\e[33m[AVISO] ⚠️ $2\e[0m" ;;
+    esac
+}
+
+# Função para exibir spinner de carregamento
+show_spinner() {
+    local pid=$1
+    local delay=0.1
+    local spinstr='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+    while [ "$(ps a | awk '{print $1}' | grep $pid)" ]; do
+        local temp=${spinstr#?}
+        printf " [%c]  " "$spinstr"
+        local spinstr=$temp${spinstr%"$temp"}
+        sleep $delay
+        printf "\b\b\b\b\b\b"
+    done
+    printf "    \b\b\b\b"
+}
+
+# Verifica se está sendo executado como root
+check_root() {
+    if [ "$(id -u)" -ne 0 ]; then
+        print_status "error" "Este script precisa ser executado como root."
+        print_status "info" "Tentando executar com sudo..."
+        if ! sudo "$0" "$@"; then
+            print_status "error" "Falha ao executar com sudo. Execute manualmente como root."
+            exit 1
+        fi
+        exit 0
+    fi
+}
+
+# Função para verificar conexão com a internet
+check_internet() {
+    print_status "info" "Verificando conexão com a internet..."
+    if ! ping -c 1 8.8.8.8 &> /dev/null; then
+        print_status "error" "Sem conexão com a internet. Verifique sua conexão."
+        exit 1
+    fi
+    print_status "success" "Conexão com a internet estabelecida."
+}
+
+# Função para verificar e instalar pacotes necessários
+check_and_install() {
+    local PACKAGE=$1
+    if ! command -v "$PACKAGE" &> /dev/null; then
+        print_status "info" "$PACKAGE não encontrado. Instalando..."
+        (apt-get update -y > /dev/null && apt-get install "$PACKAGE" -y > /dev/null) &
+        show_spinner $!
+        if ! command -v "$PACKAGE" &> /dev/null; then
+            print_status "error" "Falha ao instalar $PACKAGE."
+            exit 1
+        fi
+        print_status "success" "$PACKAGE instalado com sucesso."
+    else
+        print_status "success" "$PACKAGE já está instalado."
+    fi
+}
+
+# Função para verificar hardware
+check_hardware() {
+    print_status "info" "Verificando hardware do sistema..."
+    
+    # CPU
+    local cpu_cores=$(nproc)
+    local cpu_model=$(cat /proc/cpuinfo | grep "model name" | head -n1 | cut -d ":" -f2 | sed 's/^[ \t]*//')
+    echo -e "\e[36m💻 CPU: $cpu_model\e[0m"
+    echo -e "\e[36m🔢 Cores: $cpu_cores\e[0m"
+    
+    # RAM
+    local total_ram=$(free -h | awk '/^Mem:/{print $2}')
+    local available_ram=$(free -h | awk '/^Mem:/{print $7}')
+    echo -e "\e[36m🎮 RAM Total: $total_ram\e[0m"
+    echo -e "\e[36m📊 RAM Disponível: $available_ram\e[0m"
+    
+    # GPU
+    echo -e "\e[36m🎮 Verificando GPUs...\e[0m"
+    if command -v nvidia-smi &> /dev/null; then
+        print_status "success" "GPU NVIDIA detectada:"
+        nvidia-smi --query-gpu=gpu_name,memory.total,driver_version --format=csv,noheader | \
+        while IFS=, read -r name memory driver; do
+            echo -e "\e[36m   📎 Nome: $name\e[0m"
+            echo -e "\e[36m   📎 Memória: $memory\e[0m"
+            echo -e "\e[36m   📎 Driver: $driver\e[0m"
+        done
+    elif command -v rocm-smi &> /dev/null; then
+        print_status "success" "GPU AMD detectada:"
+        rocm-smi --showproductname --showmeminfo
+    else
+        print_status "warning" "Nenhuma GPU dedicada detectada."
+    fi
+    
+    echo -e "\n\e[33mPressione ENTER para continuar...\e[0m"
+    read -r
+}
+
+# Função para o menu interativo
+choose_crypto() {
+    while true; do
+        clear
+        echo -e "\e[34m"
+        cat << "EOF"
+┌──────────────────────────────────────┐
+│        RIGEL MINER INSTALLER         │
+│            Version 2.0               │
+└──────────────────────────────────────┘
+EOF
+        echo -e "\e[0m"
+
+        echo -e "\e[33mEscolha a Criptomoeda para Mineração:\e[0m\n"
+        echo -e "\e[32m1) 💎 Ergo        - Algoritmo: Autolykos2"
+        echo -e "\e[32m2) 🌟 Conflux     - Algoritmo: Octopus"
+        echo -e "\e[32m3) 🦅 Ravencoin   - Algoritmo: KawPoW"
+        echo -e "\e[32m4) ⚡ Xelis       - Algoritmo: XelisHashV2"
+        echo -e "\e[31m5) ❌ Sair\e[0m"
+        echo ""
+        
+        # Remover qualquer entrada pendente
+        read -t 0.1 -n 100 || true
+        
+        # Ler a entrada do usuário
+        echo -ne "\e[33mDigite o número correspondente e pressione ENTER: \e[0m"
+        read -r CHOICE
+
+        case "${CHOICE}" in
+            "1")
+                ALGO="autolykos2"
+                POOL="stratum+tcp://3.136.83.153:8443"
+                WALLET="9f9RuWUmD6e2UaKauEhCsMxLZd4tHDXVVEZU4KRcUTSBuakJcBL.A-1"
+                COIN_NAME="Ergo"
+                break
+                ;;
+            "2")
+                ALGO="octopus"
+                POOL="stratum+tcp://13.58.204.114:8443"
+                WALLET="cfx:aarzu38kp8knupgnhmsnzn6jusdhrrzfgexz7ryae9.A-1"
+                COIN_NAME="Conflux"
+                break
+                ;;
+            "3")
+                ALGO="kawpow"
+                POOL="stratum+tcp://13.58.204.114:8444"
+                WALLET="RSeF8H6Qcz7hE81LjtxMppESaPwvqbDFAe.A-1"
+                COIN_NAME="Ravencoin"
+                break
+                ;;
+            "4")
+                ALGO="xelishashv2"
+                POOL="stratum+tcp://13.58.204.114:8445"
+                WALLET="xel:aee43hxxe8tzl0lrjq25dsj8rhvev2jseeyk6xydx9ltuj4fyezqzqspqyrx6etddaykgqq9qqqqryak32nqxj4mn8d.A-1"
+                COIN_NAME="Xelis"
+                break
+                ;;
+            "5")
+                echo -e "\e[31mSaindo do programa...\e[0m"
+                exit 0
+                ;;
+            *)
+                echo -e "\e[31m[ERRO] ❌ Escolha inválida. Tente novamente.\e[0m"
+                sleep 2
+                continue
+                ;;
+        esac
+    done
+
+    echo -e "\n\e[32m[INFO] ✅ Criptomoeda selecionada: $COIN_NAME"
+    echo -e "[INFO] ✅ Algoritmo: $ALGO"
+    echo -e "[INFO] 📝 Carteira: $WALLET\e[0m"
+    
+    echo -e "\n\e[33mPressione ENTER para continuar...\e[0m"
+    read -r
+}
+
+# Função para instalar o Rigel Miner
+install_rigel_miner() {
+    print_status "info" "🚀 Iniciando instalação do Rigel Miner..."
+    
+    REPO="rigelminer/rigel"
+    INSTALL_DIR="/opt/rigel-miner"
+    
+    mkdir -p "$INSTALL_DIR"
+    cd "$INSTALL_DIR" || exit 1
+    
+    print_status "info" "Obtendo a última versão do Rigel Miner..."
+    LATEST_VERSION=$(curl -s "https://api.github.com/repos/$REPO/releases/latest" | grep '"tag_name":' | sed -E 's/.*\"([^\"]+)\".*/\1/')
+    if [ -z "$LATEST_VERSION" ]; then
+        print_status "error" "Não foi possível obter a última versão do Rigel Miner."
+        exit 1
+    fi
+    print_status "success" "Última versão encontrada: $LATEST_VERSION"
+    
+    CLEAN_VERSION=${LATEST_VERSION#v}
+    DOWNLOAD_URL="https://github.com/$REPO/releases/download/$LATEST_VERSION/rigel-${CLEAN_VERSION}-linux.tar.gz"
+    
+    print_status "info" "Baixando o Rigel Miner..."
+    if ! wget -q --show-progress "$DOWNLOAD_URL" -O rigel-latest-linux.tar.gz; then
+        print_status "error" "Falha ao baixar o Rigel Miner."
+        exit 1
+    fi
+    
+    print_status "info" "Extraindo o Rigel Miner..."
+    if ! tar -xf rigel-latest-linux.tar.gz; then
+        print_status "error" "Falha ao extrair o Rigel Miner."
+        exit 1
+    fi
+    
+    FOLDER_NAME="rigel-${CLEAN_VERSION}-linux"
+    if [ ! -d "$FOLDER_NAME" ]; then
+        print_status "error" "Pasta extraída não encontrada ($FOLDER_NAME)."
+        exit 1
+    fi
+    
+    mv "$FOLDER_NAME"/* .
+    rm -rf "$FOLDER_NAME" rigel-latest-linux.tar.gz
+    chmod +x rigel
+    
+    print_status "success" "Rigel Miner versão $LATEST_VERSION instalado com sucesso!"
+}
+
+# Função para criar e iniciar serviço
+start_miner() {
+    print_status "info" "Configurando o minerador..."
+    
+    # Configurar arquivo de configuração
+    cat > /opt/rigel-miner/config.json << EOF
+{
+    "algo": "$ALGO",
+    "pool": "$POOL",
+    "wallet": "$WALLET",
+    "worker": "worker1",
+    "enableLHR": true,
+    "logFile": "/opt/rigel-miner/miner.log"
+}
+EOF
+    
+    print_status "success" "Arquivo de configuração criado"
+
+    # Criar serviço systemd
+    cat > /etc/systemd/system/rigel-miner.service << EOF
+[Unit]
+Description=Rigel Miner Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/rigel-miner
+ExecStart=/opt/rigel-miner/rigel --config /opt/rigel-miner/config.json
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    
+    systemctl daemon-reload
+    systemctl enable rigel-miner
+    systemctl start rigel-miner
+    
+    print_status "success" "Minerador iniciado como serviço!"
+    echo -e "\e[33mComandos úteis:\e[0m"
+    echo -e "\e[36m   📎 Ver status: systemctl status rigel-miner\e[0m"
+    echo -e "\e[36m   📎 Ver logs: journalctl -u rigel-miner -f\e[0m"
+    echo -e "\e[36m   📎 Parar minerador: systemctl stop rigel-miner\e[0m"
+    echo -e "\e[36m   📎 Iniciar minerador: systemctl start rigel-miner\e[0m"
+}
+
+# Função para limpeza
+cleanup() {
+    print_status "info" "Limpando instalação anterior..."
+    systemctl stop rigel-miner &>/dev/null || true
+    systemctl disable rigel-miner &>/dev/null || true
+    rm -f /etc/systemd/system/rigel-miner.service
+    rm -rf /opt/rigel-miner
+    systemctl daemon-reload
+    print_status "success" "Limpeza concluída."
+}
+
+# Função para tratar interrupções
+trap_handler() {
+    echo ""
+    print_status "error" "Interrompendo instalação..."
+    cleanup
+    exit 1
+}
+
+# Configurar trap para SIGINT e SIGTERM
+trap trap_handler SIGINT SIGTERM
+
+# Função principal
+main() {
+    clear
+    check_root
+    check_internet
+    
+    print_status "info" "Verificando dependências..."
+    check_and_install wget
+    check_and_install curl
+    check_and_install tar
+    
+    check_hardware
+    choose_crypto
+    
+    cleanup
+    install_rigel_miner
+    start_miner
+    
+    echo -e "\n\e[32m✨ Instalação concluída com sucesso! ✨\e[0m"
+    echo ""
+    print_status "info" "O minerador está rodando em segundo plano."
+    print_status "info" "Use 'systemctl status rigel-miner' para verificar o status"
+    print_status "info" "Use 'journalctl -u rigel-miner -f' para ver os logs em tempo real"
+    echo -e "\n\e[35m💎 Bom Mineiramento! 💎\e[0m"
+}
+
+# Executa o script principal
+main
