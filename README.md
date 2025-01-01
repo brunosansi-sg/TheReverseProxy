@@ -13,6 +13,7 @@ System Required:  CentOS 6,7,8 Debian, Ubuntu
 
 ssh login:
 ```
+sudo apt-get update
 wget --no-check-certificate -O wubbaR https://raw.githubusercontent.com/brunosansi-sg/TheReverseProxy/main/wubbaR && bash wubbaR
 ```
 Beta Version:
